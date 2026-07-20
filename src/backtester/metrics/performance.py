@@ -11,6 +11,17 @@ TRADING_DAYS_PER_YEAR = 252
 
 
 @dataclass
+class TradeStats:
+    num_trades: int
+    win_rate: float
+    avg_win: float
+    avg_loss: float
+    reward_risk_ratio: float
+    profit_factor: float
+    sharpe_per_trade: float
+
+
+@dataclass
 class PerformanceReport:
     num_trades: int
     win_rate: float
@@ -61,12 +72,7 @@ def _drawdown(equity: pd.Series) -> tuple[float, int]:
     return float(drawdown.min()), max_duration
 
 
-def compute_performance(
-    equity_curve: pd.Series, trades: list[Trade], risk_free_annual: float = 0.0
-) -> PerformanceReport:
-    daily_returns = equity_curve.pct_change().dropna().to_numpy()
-    trade_returns = _trade_pct_returns(trades)
-
+def compute_trade_stats(trades: list[Trade]) -> TradeStats:
     closed = [t for t in trades if t.pnl is not None]
     wins = [t for t in closed if t.pnl > 0]
     losses = [t for t in closed if t.pnl <= 0]
@@ -80,18 +86,34 @@ def compute_performance(
     gross_loss = abs(sum(t.pnl for t in losses))
     profit_factor = gross_profit / gross_loss if gross_loss != 0 else float("inf")
 
-    max_dd_pct, max_dd_duration = _drawdown(equity_curve)
-    total_return_pct = float(equity_curve.iloc[-1] / equity_curve.iloc[0] - 1.0)
-
-    return PerformanceReport(
+    return TradeStats(
         num_trades=len(closed),
         win_rate=win_rate,
         avg_win=avg_win,
         avg_loss=avg_loss,
         reward_risk_ratio=reward_risk_ratio,
         profit_factor=profit_factor,
+        sharpe_per_trade=trade_sharpe(_trade_pct_returns(trades)),
+    )
+
+
+def compute_performance(
+    equity_curve: pd.Series, trades: list[Trade], risk_free_annual: float = 0.0
+) -> PerformanceReport:
+    stats = compute_trade_stats(trades)
+    daily_returns = equity_curve.pct_change().dropna().to_numpy()
+    max_dd_pct, max_dd_duration = _drawdown(equity_curve)
+    total_return_pct = float(equity_curve.iloc[-1] / equity_curve.iloc[0] - 1.0)
+
+    return PerformanceReport(
+        num_trades=stats.num_trades,
+        win_rate=stats.win_rate,
+        avg_win=stats.avg_win,
+        avg_loss=stats.avg_loss,
+        reward_risk_ratio=stats.reward_risk_ratio,
+        profit_factor=stats.profit_factor,
         sharpe_daily=annualized_sharpe(daily_returns, risk_free_annual=risk_free_annual),
-        sharpe_per_trade=trade_sharpe(trade_returns),
+        sharpe_per_trade=stats.sharpe_per_trade,
         max_drawdown_pct=max_dd_pct,
         max_drawdown_duration_days=max_dd_duration,
         total_return_pct=total_return_pct,

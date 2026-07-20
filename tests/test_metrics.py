@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from backtester.engine.portfolio import Trade
-from backtester.metrics.performance import annualized_sharpe, compute_performance, trade_sharpe
+from backtester.metrics.performance import annualized_sharpe, compute_performance, compute_trade_stats, trade_sharpe
 
 
 def test_annualized_sharpe_zero_std_is_zero():
@@ -58,3 +58,16 @@ def test_no_trades_gives_neutral_stats():
     assert report.num_trades == 0
     assert report.win_rate == 0.0
     assert report.sharpe_per_trade == 0.0
+
+
+def test_compute_trade_stats_matches_performance_report_trade_fields():
+    trades = [make_trade(100.0), make_trade(100.0), make_trade(-50.0)]
+    equity = pd.Series([1000.0, 1050.0, 1150.0, 1100.0])
+
+    stats = compute_trade_stats(trades)
+    report = compute_performance(equity, trades)
+
+    assert stats.num_trades == report.num_trades
+    assert stats.win_rate == report.win_rate
+    assert stats.profit_factor == pytest.approx(report.profit_factor)
+    assert stats.sharpe_per_trade == pytest.approx(report.sharpe_per_trade)
