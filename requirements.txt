@@ -1,0 +1,7 @@
+pandas>=2.2
+numpy>=1.26
+duckdb>=1.0
+yfinance>=0.2
+matplotlib>=3.8
+pyarrow>=16.0
+streamlit>=1.35

@@ -12,21 +12,8 @@ from backtester.engine.backtest import run_backtest  # noqa: E402
 from backtester.engine.costs import CostModel  # noqa: E402
 from backtester.metrics.performance import compute_performance  # noqa: E402
 from backtester.propfirm.rules import PropFirmRules, validate  # noqa: E402
-from backtester.strategy.base import Strategy  # noqa: E402
-from backtester.strategy.examples.breakout import RangeBreakout  # noqa: E402
-from backtester.strategy.examples.ma_crossover import MovingAverageCrossover  # noqa: E402
+from backtester.strategy.registry import STRATEGIES, build_strategy  # noqa: E402
 from backtester.viz.plots import plot_drawdown, plot_equity_curve, plot_trade_distribution  # noqa: E402
-
-STRATEGIES = {
-    "ma_crossover": MovingAverageCrossover,
-    "breakout": RangeBreakout,
-}
-
-
-def build_strategy(name: str, params: dict) -> Strategy:
-    if name not in STRATEGIES:
-        raise ValueError(f"unknown strategy '{name}', choices: {list(STRATEGIES)}")
-    return STRATEGIES[name](**params)
 
 
 def parse_strategy_params(pairs: list[str]) -> dict:

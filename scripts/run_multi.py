@@ -12,7 +12,8 @@ from backtester.data import ingest, store  # noqa: E402
 from backtester.engine.backtest import run_backtest  # noqa: E402
 from backtester.engine.costs import CostModel  # noqa: E402
 from backtester.metrics.performance import compute_trade_stats  # noqa: E402
-from run_backtest import STRATEGIES, build_strategy, parse_strategy_params  # noqa: E402
+from backtester.strategy.registry import STRATEGIES, build_strategy  # noqa: E402
+from run_backtest import parse_strategy_params  # noqa: E402
 
 MIN_TRADES_FOR_SIGNIFICANCE = 100
 
