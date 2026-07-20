@@ -31,9 +31,7 @@ STRATEGY_PARAM_SPECS = {
 
 @st.cache_data(show_spinner="Téléchargement des données...")
 def load_data(ticker: str, start: str, end: str) -> pd.DataFrame:
-    raw_path = store.RAW_DIR / f"{ticker}.parquet"
-    if not raw_path.exists():
-        ingest.ingest(ticker, start=start, end=end)
+    ingest.ensure_cached(ticker, start=start, end=end)
     return store.load(ticker, start=start, end=end)
 
 
@@ -88,6 +86,10 @@ try:
     df = load_data(ticker, start, end)
 except Exception as exc:
     st.error(f"Impossible de charger les données pour {ticker} : {exc}")
+    st.stop()
+
+if df.empty:
+    st.error(f"Aucune donnée pour {ticker} entre {start} et {end}.")
     st.stop()
 
 strategy = build_strategy(strategy_name, strategy_params)

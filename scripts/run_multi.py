@@ -43,9 +43,10 @@ def main() -> None:
     all_trades = []
     print(f"{'ticker':<8}{'trades':>8}{'win_rate':>10}{'profit_factor':>15}")
     for ticker in args.tickers:
-        raw_path = store.RAW_DIR / f"{ticker}.parquet"
-        if args.refresh_data or not raw_path.exists():
+        if args.refresh_data:
             ingest.ingest(ticker, start=args.start, end=args.end)
+        else:
+            ingest.ensure_cached(ticker, start=args.start, end=args.end)
         df = store.load(ticker, start=args.start, end=args.end)
 
         strategy = build_strategy(args.strategy, strategy_params)

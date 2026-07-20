@@ -53,9 +53,10 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    raw_path = store.RAW_DIR / f"{args.ticker}.parquet"
-    if args.refresh_data or not raw_path.exists():
+    if args.refresh_data:
         ingest.ingest(args.ticker, start=args.start, end=args.end)
+    else:
+        ingest.ensure_cached(args.ticker, start=args.start, end=args.end)
     df = store.load(args.ticker, start=args.start, end=args.end)
 
     strategy = build_strategy(args.strategy, parse_strategy_params(args.param))
