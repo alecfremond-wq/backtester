@@ -99,42 +99,69 @@ def strategy_param_widgets(strategy_name: str) -> dict:
 
 # --------------------------------------------------------------- charts --
 def price_chart(df: pd.DataFrame, indicators: dict, trades: list) -> alt.LayerChart:
-    base = alt.Chart(df).encode(x=alt.X("date:T", title=None))
-    layers = [base.mark_line(color="#60A5FA", strokeWidth=1.6).encode(
-        y=alt.Y("close:Q", title="Prix", scale=alt.Scale(zero=False))
-    )]
+    series_names = ["Clôture", *indicators.keys()]
+    palette = ["#60A5FA", "#FBBF24", "#A78BFA", "#38BDF8", "#FB923C", "#34D399"]
+    color_scale = alt.Scale(domain=series_names, range=palette[: len(series_names)])
+    dash_scale = alt.Scale(domain=series_names, range=[[1, 0], *([[5, 3]] * (len(series_names) - 1))])
 
-    for label, series in indicators.items():
-        ind_df = pd.DataFrame({"date": df["date"], "valeur": series.to_numpy(), "indicateur": label})
-        layers.append(
-            alt.Chart(ind_df)
-            .mark_line(strokeDash=[4, 3], strokeWidth=1.2, opacity=0.85)
-            .encode(
-                x="date:T",
-                y=alt.Y("valeur:Q", title="Prix"),
-                color=alt.Color("indicateur:N", title=None, legend=alt.Legend(orient="top")),
-            )
+    lines_df = pd.concat(
+        [pd.DataFrame({"date": df["date"], "valeur": df["close"], "série": "Clôture"})]
+        + [
+            pd.DataFrame({"date": df["date"], "valeur": pd.Series(values).to_numpy(), "série": label})
+            for label, values in indicators.items()
+        ],
+        ignore_index=True,
+    )
+
+    zoom = alt.selection_interval(bind="scales", encodings=["x"])
+
+    price_lines = (
+        alt.Chart(lines_df)
+        .mark_line(point=alt.OverlayMarkDef(filled=True, size=18, opacity=0), strokeWidth=1.8)
+        .encode(
+            x=alt.X("date:T", title=None),
+            y=alt.Y("valeur:Q", title="Prix ($)", scale=alt.Scale(zero=False)),
+            color=alt.Color("série:N", scale=color_scale, title="Courbe", legend=alt.Legend(orient="top")),
+            strokeDash=alt.StrokeDash("série:N", scale=dash_scale, legend=None),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date", format="%d %b %Y"),
+                alt.Tooltip("série:N", title="Courbe"),
+                alt.Tooltip("valeur:Q", title="Valeur", format="$,.2f"),
+            ],
         )
+    )
+    layers = [price_lines]
 
     if trades:
         markers = pd.DataFrame(
-            [{"date": t.entry_date, "prix": t.entry_price, "type": "Entrée long"} for t in trades if t.side == 1]
-            + [{"date": t.entry_date, "prix": t.entry_price, "type": "Entrée short"} for t in trades if t.side == -1]
+            [
+                {"date": t.entry_date, "prix": t.entry_price, "type": "Entrée long",
+                 "détail": f"Long @ ${t.entry_price:,.2f}"}
+                for t in trades if t.side == 1
+            ]
             + [
-                {"date": t.exit_date, "prix": t.exit_price, "type": "Sortie"}
-                for t in trades
-                if t.exit_date is not None
+                {"date": t.entry_date, "prix": t.entry_price, "type": "Entrée short",
+                 "détail": f"Short @ ${t.entry_price:,.2f}"}
+                for t in trades if t.side == -1
+            ]
+            + [
+                {
+                    "date": t.exit_date, "prix": t.exit_price, "type": "Sortie",
+                    "détail": f"Sortie @ ${t.exit_price:,.2f}"
+                    + (f" · PnL ${t.pnl:,.2f}" if t.pnl is not None else ""),
+                }
+                for t in trades if t.exit_date is not None
             ]
         )
         layers.append(
             alt.Chart(markers)
-            .mark_point(size=70, filled=True, opacity=0.85)
+            .mark_point(size=90, filled=True, opacity=0.9, stroke="#0F172A", strokeWidth=0.6)
             .encode(
                 x="date:T",
                 y="prix:Q",
                 color=alt.Color(
                     "type:N",
-                    title=None,
+                    title="Trade",
                     scale=alt.Scale(
                         domain=["Entrée long", "Entrée short", "Sortie"], range=[GREEN, RED, GRAY]
                     ),
@@ -148,19 +175,39 @@ def price_chart(df: pd.DataFrame, indicators: dict, trades: list) -> alt.LayerCh
                     ),
                     legend=None,
                 ),
+                tooltip=[
+                    alt.Tooltip("date:T", title="Date", format="%d %b %Y"),
+                    alt.Tooltip("détail:N", title=""),
+                ],
             )
         )
 
-    price = alt.layer(*layers).resolve_scale(color="independent", shape="independent").properties(height=380)
+    price = (
+        alt.layer(*layers)
+        .resolve_scale(color="independent", shape="independent")
+        .properties(height=380)
+        .add_params(zoom)
+    )
+
+    if "volume" not in df.columns:
+        return price
 
     volume = (
         alt.Chart(df)
         .mark_bar(color="#334155")
-        .encode(x=alt.X("date:T", title="Date"), y=alt.Y("volume:Q", title="Volume"))
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("volume:Q", title="Volume"),
+            tooltip=[
+                alt.Tooltip("date:T", title="Date", format="%d %b %Y"),
+                alt.Tooltip("volume:Q", title="Volume", format=",.0f"),
+            ],
+        )
         .properties(height=100)
-    ) if "volume" in df.columns else None
+        .add_params(zoom)
+    )
 
-    return alt.vconcat(price, volume).resolve_scale(x="shared") if volume is not None else price
+    return alt.vconcat(price, volume).resolve_scale(x="shared")
 
 
 def equity_chart(equity_curve: pd.Series) -> alt.Chart:
@@ -307,6 +354,7 @@ tab_price, tab_perf, tab_trades = st.tabs([
 with tab_price:
     with st.container(border=True):
         st.altair_chart(price_chart(df, strategy.indicators(df), result.trades), width="stretch")
+        st.caption("Survole une courbe pour la valeur exacte · molette ou glisser pour zoomer/naviguer")
 
 with tab_perf:
     with st.container(border=True):
