@@ -57,8 +57,11 @@ with st.sidebar:
     st.header("Configuration")
     ticker = st.text_input("Ticker", value="AAPL").upper().strip()
     col1, col2 = st.columns(2)
-    start = col1.date_input("Début", value=pd.Timestamp("2010-01-01")).isoformat()
-    end = col2.date_input("Fin", value=pd.Timestamp("2024-01-01")).isoformat()
+    date_bounds = (pd.Timestamp("1990-01-01"), pd.Timestamp.today())
+    start = col1.date_input("Début", value=pd.Timestamp("2010-01-01"), min_value=date_bounds[0],
+                             max_value=date_bounds[1]).isoformat()
+    end = col2.date_input("Fin", value=pd.Timestamp("2024-01-01"), min_value=date_bounds[0],
+                           max_value=date_bounds[1]).isoformat()
 
     st.subheader("Stratégie")
     strategy_name = st.selectbox("Stratégie", list(STRATEGIES))
