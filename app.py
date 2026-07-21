@@ -19,12 +19,15 @@ from backtester.viz.plots import plot_drawdown, plot_equity_curve, plot_price, p
 st.set_page_config(page_title="Backtester", layout="wide")
 
 STRATEGY_PARAM_SPECS = {
+    # défauts calibrés via scripts/walkforward.py — profit factor out-of-sample
+    # > 1 sur les 4 folds testés (2010-2024, 10 tickers), contrairement aux
+    # anciens défauts (fast=20/slow=50, window=20) qui montraient un edge faible
     "ma_crossover": [
-        ("fast", 5, 100, 20, 1),
-        ("slow", 10, 300, 50, 1),
+        ("fast", 5, 100, 30, 1),
+        ("slow", 10, 300, 150, 1),
     ],
     "breakout": [
-        ("window", 5, 120, 20, 1),
+        ("window", 5, 200, 100, 1),
     ],
 }
 
@@ -49,12 +52,18 @@ with st.sidebar:
     st.header("Configuration")
     ticker = st.text_input("Ticker", value="AAPL").upper().strip()
     col1, col2 = st.columns(2)
-    start = col1.date_input("Début", value=pd.Timestamp("2018-01-01")).isoformat()
-    end = col2.date_input("Fin", value=pd.Timestamp.today()).isoformat()
+    start = col1.date_input("Début", value=pd.Timestamp("2010-01-01")).isoformat()
+    end = col2.date_input("Fin", value=pd.Timestamp("2024-01-01")).isoformat()
 
     st.subheader("Stratégie")
     strategy_name = st.selectbox("Stratégie", list(STRATEGIES))
     strategy_params = strategy_param_widgets(strategy_name)
+    st.caption(
+        "Défauts calibrés via scripts/walkforward.py : profit factor "
+        "out-of-sample > 1 sur 4 folds (2010–2024, panier de 10 tickers). "
+        "C'est un résultat de portefeuille diversifié — un seul ticker sur "
+        "une autre période peut très bien ne pas le reproduire."
+    )
 
     st.subheader("Capital & coûts")
     initial_capital = st.number_input("Capital initial", value=100_000.0, step=10_000.0)
