@@ -5,3 +5,4 @@ yfinance>=0.2
 matplotlib>=3.8
 pyarrow>=16.0
 streamlit>=1.35
+scikit-learn>=1.4

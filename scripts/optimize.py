@@ -24,6 +24,12 @@ PARAM_GRIDS = {
         if f < s
     ],
     "breakout": [{"window": w} for w in (10, 15, 20, 30, 40, 60, 80, 100, 120)],
+    "ml_classifier": [
+        {"horizon": h, "retrain_every": r, "prob_threshold": p}
+        for h in (5, 10, 20)
+        for r in (63, 126)
+        for p in (0.55, 0.60)
+    ],
 }
 
 

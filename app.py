@@ -29,6 +29,11 @@ STRATEGY_PARAM_SPECS = {
     "breakout": [
         ("window", 5, 200, 100, 1),
     ],
+    "ml_classifier": [
+        ("horizon", 3, 40, 10, 1),
+        ("retrain_every", 21, 252, 63, 1),
+        ("prob_threshold", 0.50, 0.90, 0.55, 0.01),
+    ],
 }
 
 
