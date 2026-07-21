@@ -10,9 +10,11 @@ import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
 from backtester.data import ingest, store  # noqa: E402
+from backtester.data.universe import LARGE_CAP_UNIVERSE  # noqa: E402
 from backtester.engine.backtest import run_backtest  # noqa: E402
 from backtester.engine.costs import CostModel  # noqa: E402
-from backtester.metrics.performance import compute_performance  # noqa: E402
+from backtester.engine.multi_ticker import run_multi_ticker_backtest  # noqa: E402
+from backtester.metrics.performance import compute_performance, compute_trade_stats  # noqa: E402
 from backtester.propfirm.rules import PropFirmRules, validate  # noqa: E402
 from backtester.strategy.registry import STRATEGIES, build_strategy  # noqa: E402
 
@@ -286,6 +288,15 @@ with st.sidebar:
             else None
         )
 
+    with st.expander("Portefeuille (diversification)", icon=":material/pie_chart:"):
+        st.caption("Même stratégie, capital réparti sur plusieurs tickers — pour ne pas dépendre d'une seule position.")
+        portfolio_options = sorted(set(LARGE_CAP_UNIVERSE) | ({ticker} if ticker else set()))
+        portfolio_tickers = st.multiselect(
+            "Tickers du portefeuille",
+            options=portfolio_options,
+            default=["AAPL", "MSFT", "JPM", "XOM", "JNJ"],
+        )
+
     run_clicked = st.button("Lancer le backtest", type="primary", icon=":material/play_arrow:", width="stretch")
 
 if not run_clicked:
@@ -345,10 +356,34 @@ else:
     with st.expander(f"Voir les {len(validation.breaches)} violations"):
         st.dataframe(breach_df, width="stretch", hide_index=True)
 
-tab_price, tab_perf, tab_trades = st.tabs([
+portfolio_result = None
+if portfolio_tickers:
+    portfolio_dfs = {}
+    portfolio_skipped = []
+    for t in portfolio_tickers:
+        try:
+            portfolio_dfs[t] = load_data(t, start, end)
+        except Exception:
+            portfolio_skipped.append(t)
+    if portfolio_dfs:
+        portfolio_result = run_multi_ticker_backtest(
+            portfolio_dfs, strategy, initial_capital=initial_capital, pct_per_trade=pct_per_trade, costs=costs
+        )
+        portfolio_report = compute_performance(portfolio_result.equity_curve, portfolio_result.trades)
+        portfolio_validation = validate(
+            portfolio_result.equity_curve, portfolio_result.trades,
+            PropFirmRules(
+                initial_capital=initial_capital, daily_loss_pct=daily_loss_pct,
+                max_total_loss_pct=max_total_loss_pct,
+                max_single_trade_profit_pct=max_single_trade_profit_pct,
+            ),
+        )
+
+tab_price, tab_perf, tab_trades, tab_portfolio = st.tabs([
     ":material/candlestick_chart: Prix & signaux",
     ":material/trending_up: Performance",
     ":material/receipt_long: Trades",
+    ":material/pie_chart: Portefeuille",
 ])
 
 with tab_price:
@@ -394,3 +429,99 @@ with tab_trades:
                 "pnl": st.column_config.NumberColumn(format="$%.2f"),
             },
         )
+
+with tab_portfolio:
+    if not portfolio_tickers:
+        st.info("Choisis des tickers dans « Portefeuille (diversification) » dans la barre latérale.",
+                 icon=":material/info:")
+    elif portfolio_result is None:
+        st.error("Impossible de charger des données pour les tickers du portefeuille.")
+    else:
+        if portfolio_skipped:
+            st.warning(f"Tickers ignorés (données indisponibles) : {', '.join(portfolio_skipped)}",
+                        icon=":material/warning:")
+
+        st.caption(
+            f"{len(portfolio_dfs)} tickers · capital réparti à parts égales "
+            f"(${initial_capital / len(portfolio_dfs):,.0f} chacun)"
+        )
+
+        with st.container(horizontal=True):
+            st.metric("Trades (total)", portfolio_report.num_trades, border=True)
+            st.metric("Win rate", f"{portfolio_report.win_rate:.1%}", border=True)
+            st.metric("Profit factor", f"{portfolio_report.profit_factor:.2f}", border=True)
+            st.metric("Rendement total", f"{portfolio_report.total_return_pct:.1%}", border=True)
+        with st.container(horizontal=True):
+            st.metric("Max drawdown", f"{portfolio_report.max_drawdown_pct:.1%}", border=True)
+            st.metric("Durée max drawdown", f"{portfolio_report.max_drawdown_duration_days} j.", border=True)
+            st.metric("Sharpe (journalier)", f"{portfolio_report.sharpe_daily:.2f}", border=True)
+            st.metric("Sharpe (par trade)", f"{portfolio_report.sharpe_per_trade:.2f}", border=True)
+
+        if portfolio_validation.passed:
+            st.success("Règles prop firm respectées sur le portefeuille diversifié.",
+                        icon=":material/check_circle:")
+        else:
+            st.error(
+                "Règles prop firm violées — première violation le "
+                f"{portfolio_validation.first_breach_date.date()}.",
+                icon=":material/error:",
+            )
+
+        with st.container(border=True):
+            st.markdown("**Equity curve du portefeuille**")
+            st.altair_chart(equity_chart(portfolio_result.equity_curve), width="stretch")
+        with st.container(border=True):
+            st.markdown("**Drawdown du portefeuille**")
+            st.altair_chart(drawdown_chart(portfolio_result.equity_curve), width="stretch")
+
+        with st.container(border=True):
+            st.markdown("**Performance par ticker**")
+            per_ticker_df = pd.DataFrame(
+                [
+                    {
+                        "ticker": t,
+                        "trades": (stats := compute_trade_stats(
+                            [tr for tr in portfolio_result.trades if tr.ticker == t]
+                        )).num_trades,
+                        "win rate": stats.win_rate * 100,
+                        "profit factor": stats.profit_factor,
+                    }
+                    for t in portfolio_dfs
+                ]
+            )
+            st.dataframe(
+                per_ticker_df,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "win rate": st.column_config.NumberColumn(format="%.1f%%"),
+                    "profit factor": st.column_config.NumberColumn(format="%.2f"),
+                },
+            )
+
+        with st.container(border=True):
+            st.markdown("**Liste des positions**")
+            positions_df = pd.DataFrame(
+                [
+                    {
+                        "ticker": t.ticker,
+                        "entrée": t.entry_date.date(),
+                        "sortie": t.exit_date.date() if t.exit_date is not None else None,
+                        "sens": "long" if t.side == 1 else "short",
+                        "prix entrée": round(t.entry_price, 2),
+                        "prix sortie": round(t.exit_price, 2) if t.exit_price is not None else None,
+                        "pnl": round(t.pnl, 2) if t.pnl is not None else None,
+                    }
+                    for t in sorted(portfolio_result.trades, key=lambda tr: tr.entry_date)
+                ]
+            )
+            st.dataframe(
+                positions_df,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "prix entrée": st.column_config.NumberColumn(format="$%.2f"),
+                    "prix sortie": st.column_config.NumberColumn(format="$%.2f"),
+                    "pnl": st.column_config.NumberColumn(format="$%.2f"),
+                },
+            )
