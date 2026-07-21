@@ -25,3 +25,9 @@ class MovingAverageCrossover(Strategy):
         warmup = fast_ma.isna() | slow_ma.isna()
         signal[warmup] = 0
         return signal
+
+    def indicators(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        return {
+            f"MA rapide ({self.fast})": df["close"].rolling(self.fast).mean(),
+            f"MA lente ({self.slow})": df["close"].rolling(self.slow).mean(),
+        }

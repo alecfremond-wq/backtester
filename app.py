@@ -14,7 +14,7 @@ from backtester.engine.costs import CostModel  # noqa: E402
 from backtester.metrics.performance import compute_performance  # noqa: E402
 from backtester.propfirm.rules import PropFirmRules, validate  # noqa: E402
 from backtester.strategy.registry import STRATEGIES, build_strategy  # noqa: E402
-from backtester.viz.plots import plot_drawdown, plot_equity_curve, plot_trade_distribution  # noqa: E402
+from backtester.viz.plots import plot_drawdown, plot_equity_curve, plot_price, plot_trade_distribution  # noqa: E402
 
 st.set_page_config(page_title="Backtester", layout="wide")
 
@@ -128,8 +128,16 @@ else:
     )
     st.dataframe(breach_df, width="stretch")
 
+st.subheader("Évolution du prix")
+st.pyplot(plot_price(df, indicators=strategy.indicators(df), trades=result.trades))
+
+st.subheader("Equity curve")
 st.pyplot(plot_equity_curve(result.equity_curve))
+
+st.subheader("Drawdown")
 st.pyplot(plot_drawdown(result.equity_curve))
+
+st.subheader("Distribution des trades")
 st.pyplot(plot_trade_distribution(result.trades))
 
 st.subheader("Journal des trades")

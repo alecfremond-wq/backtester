@@ -20,3 +20,9 @@ class RangeBreakout(Strategy):
             raw[df["close"] < rolling_low] = -1
 
         return raw.ffill().fillna(0).astype("int64")
+
+    def indicators(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        return {
+            f"Canal haut ({self.window})": df["high"].rolling(self.window).max().shift(1),
+            f"Canal bas ({self.window})": df["low"].rolling(self.window).min().shift(1),
+        }

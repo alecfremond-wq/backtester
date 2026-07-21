@@ -39,3 +39,14 @@ def test_fast_must_be_smaller_than_slow():
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_indicators_returns_fast_and_slow_ma():
+    df = pd.DataFrame({"close": range(1, 11)}, dtype="float64")
+    strat = MovingAverageCrossover(fast=3, slow=5)
+    indicators = strat.indicators(df)
+
+    assert set(indicators) == {"MA rapide (3)", "MA lente (5)"}
+    pd.testing.assert_series_equal(
+        indicators["MA rapide (3)"], df["close"].rolling(3).mean(), check_names=False
+    )

@@ -31,3 +31,14 @@ def test_long_only_never_shorts():
     strat = RangeBreakout(window=3, long_only=True)
     signal = strat.generate_signals(df)
     assert (signal >= 0).all()
+
+
+def test_indicators_returns_rolling_channel():
+    df = make_df([100, 100, 100, 100, 105, 105, 105, 105])
+    strat = RangeBreakout(window=3)
+    indicators = strat.indicators(df)
+
+    assert set(indicators) == {"Canal haut (3)", "Canal bas (3)"}
+    pd.testing.assert_series_equal(
+        indicators["Canal haut (3)"], df["high"].rolling(3).max().shift(1), check_names=False
+    )

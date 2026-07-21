@@ -17,3 +17,12 @@ class Strategy(ABC):
         decisions, not positions actually held during that bar.
         """
         raise NotImplementedError
+
+    def indicators(self, df: pd.DataFrame) -> dict[str, pd.Series]:
+        """Optional diagnostic series to overlay on a price chart (e.g. moving averages).
+
+        Empty by default; strategies may override to expose the series they
+        compute internally so callers can plot them alongside price without
+        duplicating the rolling-window logic.
+        """
+        return {}
