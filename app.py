@@ -41,6 +41,43 @@ STRATEGY_PARAM_SPECS = {
         ("stop_loss", 0.005, 0.10, 0.02, 0.005),
         ("max_holding_bars", 1, 30, 5, 1),
     ],
+    "trend_pullback": [
+        ("trend_ma", 20, 300, 150, 5),
+        ("lookback", 3, 60, 10, 1),
+        ("entry_z", 0.5, 3.0, 1.5, 0.1),
+        ("profit_target", 0.005, 0.10, 0.02, 0.005),
+        ("stop_loss", 0.005, 0.10, 0.02, 0.005),
+        ("max_holding_bars", 1, 30, 5, 1),
+    ],
+}
+
+# résumé honnête de scripts/walkforward.py (2010-2024, 10 tickers, 4 folds) pour les
+# défauts de chaque stratégie -- résultat de portefeuille diversifié, pas une garantie
+# pour un seul ticker sur une autre période
+WALKFORWARD_NOTES = {
+    "ma_crossover": (
+        "Défauts validés : profit factor out-of-sample > 1 sur les 4 folds "
+        "(1.95 / 5.15 / 5.81 / 3.03), agrégé ≈ 3.3. L'edge le plus solide des quatre."
+    ),
+    "breakout": (
+        "Défauts validés : profit factor out-of-sample > 1 sur les 4 folds "
+        "(1.26 / 6.90 / 3.35 / 4.23), agrégé ≈ 2.8."
+    ),
+    "ml_classifier": (
+        "Edge réel mais modeste : profit factor out-of-sample 1.56 / 1.66 / 1.68 / 1.11, "
+        "agrégé ≈ 1.5. Le fold le plus récent est le plus faible — signe possible de "
+        "dérive du modèle dans le temps."
+    ),
+    "mean_reversion": (
+        "Aucun edge détecté : profit factor ≈ 1.0 sur toute la grille testée "
+        "(0.90–1.04) — statistiquement indiscernable du bruit après coûts."
+    ),
+    "trend_pullback": (
+        "Edge réel mais modeste : profit factor out-of-sample 1.09 / 1.96 / 1.19 / 0.97, "
+        "agrégé ≈ 1.2. Le fold le plus récent (2021-2024) est légèrement perdant hors "
+        "échantillon — à surveiller. Avantage : drawdown nettement plus faible que les "
+        "stratégies de tendance pure."
+    ),
 }
 
 
@@ -73,12 +110,7 @@ with st.sidebar:
     st.subheader("Stratégie")
     strategy_name = st.selectbox("Stratégie", list(STRATEGIES))
     strategy_params = strategy_param_widgets(strategy_name)
-    st.caption(
-        "Défauts calibrés via scripts/walkforward.py : profit factor "
-        "out-of-sample > 1 sur 4 folds (2010–2024, panier de 10 tickers). "
-        "C'est un résultat de portefeuille diversifié — un seul ticker sur "
-        "une autre période peut très bien ne pas le reproduire."
-    )
+    st.caption(WALKFORWARD_NOTES.get(strategy_name, ""))
 
     st.subheader("Capital & coûts")
     initial_capital = st.number_input("Capital initial", value=100_000.0, step=10_000.0)
