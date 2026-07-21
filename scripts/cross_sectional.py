@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from backtester.cross_sectional.engine import run_cross_sectional_backtest  # noqa: E402
 from backtester.cross_sectional.signals import momentum_score  # noqa: E402
 from backtester.data import ingest, store  # noqa: E402
+from backtester.data.universe import UNIVERSES  # noqa: E402
 from backtester.engine.costs import CostModel  # noqa: E402
 from backtester.metrics.performance import compute_performance  # noqa: E402
 from backtester.propfirm.rules import PropFirmRules, validate  # noqa: E402
@@ -17,7 +18,9 @@ from backtester.propfirm.rules import PropFirmRules, validate  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Cross-sectional momentum long/short across a ticker basket.")
-    parser.add_argument("tickers", nargs="+")
+    parser.add_argument("tickers", nargs="*", help="explicit tickers, or omit and pass --universe")
+    parser.add_argument("--universe", choices=list(UNIVERSES), default=None,
+                         help="use a predefined ticker basket instead of listing tickers")
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", default=None)
     parser.add_argument("--momentum-window", type=int, default=126)
@@ -36,14 +39,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    tickers = args.tickers if args.tickers else UNIVERSES.get(args.universe, [])
+    if not tickers:
+        raise SystemExit("provide tickers or --universe")
 
     dfs = {}
-    for ticker in args.tickers:
-        if args.refresh_data:
-            ingest.ingest(ticker, start=args.start, end=args.end)
-        else:
-            ingest.ensure_cached(ticker, start=args.start, end=args.end)
-        dfs[ticker] = store.load(ticker, start=args.start, end=args.end)
+    skipped = []
+    for ticker in tickers:
+        try:
+            if args.refresh_data:
+                ingest.ingest(ticker, start=args.start, end=args.end)
+            else:
+                ingest.ensure_cached(ticker, start=args.start, end=args.end)
+            dfs[ticker] = store.load(ticker, start=args.start, end=args.end)
+        except Exception as exc:
+            skipped.append(ticker)
+            print(f"skipping {ticker}: {exc}")
+
+    if skipped:
+        print(f"skipped {len(skipped)}/{len(tickers)} tickers: {', '.join(skipped)}\n")
 
     costs = CostModel(slippage_bps=args.slippage_bps, fee_bps=args.fee_bps)
     result = run_cross_sectional_backtest(
@@ -59,7 +73,7 @@ def main() -> None:
     report = compute_performance(result.equity_curve, result.trades)
 
     print(
-        f"=== cross-sectional momentum | {len(args.tickers)} tickers | "
+        f"=== cross-sectional momentum | {len(dfs)} tickers | "
         f"window={args.momentum_window} top={args.top_n} bottom={args.bottom_n} "
         f"rebalance={args.rebalance_every} | {args.start} -> {args.end or 'latest'} ==="
     )
