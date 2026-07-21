@@ -30,6 +30,12 @@ PARAM_GRIDS = {
         for r in (63, 126)
         for p in (0.55, 0.60)
     ],
+    "mean_reversion": [
+        {"lookback": lb, "entry_z": z, "profit_target": pt, "stop_loss": pt, "max_holding_bars": 5}
+        for lb in (5, 10, 20)
+        for z in (1.0, 1.5, 2.0)
+        for pt in (0.01, 0.02, 0.03)
+    ],
 }
 
 

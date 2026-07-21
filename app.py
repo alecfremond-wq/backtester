@@ -34,6 +34,13 @@ STRATEGY_PARAM_SPECS = {
         ("retrain_every", 21, 252, 63, 1),
         ("prob_threshold", 0.50, 0.90, 0.55, 0.01),
     ],
+    "mean_reversion": [
+        ("lookback", 3, 60, 10, 1),
+        ("entry_z", 0.5, 3.0, 1.0, 0.1),
+        ("profit_target", 0.005, 0.10, 0.02, 0.005),
+        ("stop_loss", 0.005, 0.10, 0.02, 0.005),
+        ("max_holding_bars", 1, 30, 5, 1),
+    ],
 }
 
 
