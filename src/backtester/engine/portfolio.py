@@ -15,6 +15,7 @@ class Trade:
     exit_price: float | None = None
     costs: float = 0.0
     pnl: float | None = None
+    ticker: str | None = None  # set by multi-asset engines; unused (None) for single-ticker runs
 
     def close(self, date: pd.Timestamp, price: float, exit_cost: float) -> None:
         self.exit_date = date
