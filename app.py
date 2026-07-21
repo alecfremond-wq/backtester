@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
+import altair as alt  # noqa: E402
 import pandas as pd  # noqa: E402
 import streamlit as st  # noqa: E402
 
@@ -14,9 +15,10 @@ from backtester.engine.costs import CostModel  # noqa: E402
 from backtester.metrics.performance import compute_performance  # noqa: E402
 from backtester.propfirm.rules import PropFirmRules, validate  # noqa: E402
 from backtester.strategy.registry import STRATEGIES, build_strategy  # noqa: E402
-from backtester.viz.plots import plot_drawdown, plot_equity_curve, plot_price, plot_trade_distribution  # noqa: E402
 
-st.set_page_config(page_title="Backtester", layout="wide")
+st.set_page_config(page_title="Backtester", page_icon=":material/monitoring:", layout="wide")
+
+GREEN, RED, GRAY = "#34D399", "#F87171", "#94A3B8"
 
 STRATEGY_PARAM_SPECS = {
     # défauts calibrés via scripts/walkforward.py — profit factor out-of-sample
@@ -95,7 +97,116 @@ def strategy_param_widgets(strategy_name: str) -> dict:
     return params
 
 
-st.title("Backtester — exploration de stratégies")
+# --------------------------------------------------------------- charts --
+def price_chart(df: pd.DataFrame, indicators: dict, trades: list) -> alt.LayerChart:
+    base = alt.Chart(df).encode(x=alt.X("date:T", title=None))
+    layers = [base.mark_line(color="#60A5FA", strokeWidth=1.6).encode(
+        y=alt.Y("close:Q", title="Prix", scale=alt.Scale(zero=False))
+    )]
+
+    for label, series in indicators.items():
+        ind_df = pd.DataFrame({"date": df["date"], "valeur": series.to_numpy(), "indicateur": label})
+        layers.append(
+            alt.Chart(ind_df)
+            .mark_line(strokeDash=[4, 3], strokeWidth=1.2, opacity=0.85)
+            .encode(
+                x="date:T",
+                y=alt.Y("valeur:Q", title="Prix"),
+                color=alt.Color("indicateur:N", title=None, legend=alt.Legend(orient="top")),
+            )
+        )
+
+    if trades:
+        markers = pd.DataFrame(
+            [{"date": t.entry_date, "prix": t.entry_price, "type": "Entrée long"} for t in trades if t.side == 1]
+            + [{"date": t.entry_date, "prix": t.entry_price, "type": "Entrée short"} for t in trades if t.side == -1]
+            + [
+                {"date": t.exit_date, "prix": t.exit_price, "type": "Sortie"}
+                for t in trades
+                if t.exit_date is not None
+            ]
+        )
+        layers.append(
+            alt.Chart(markers)
+            .mark_point(size=70, filled=True, opacity=0.85)
+            .encode(
+                x="date:T",
+                y="prix:Q",
+                color=alt.Color(
+                    "type:N",
+                    title=None,
+                    scale=alt.Scale(
+                        domain=["Entrée long", "Entrée short", "Sortie"], range=[GREEN, RED, GRAY]
+                    ),
+                    legend=alt.Legend(orient="top"),
+                ),
+                shape=alt.Shape(
+                    "type:N",
+                    scale=alt.Scale(
+                        domain=["Entrée long", "Entrée short", "Sortie"],
+                        range=["triangle-up", "triangle-down", "circle"],
+                    ),
+                    legend=None,
+                ),
+            )
+        )
+
+    price = alt.layer(*layers).resolve_scale(color="independent", shape="independent").properties(height=380)
+
+    volume = (
+        alt.Chart(df)
+        .mark_bar(color="#334155")
+        .encode(x=alt.X("date:T", title="Date"), y=alt.Y("volume:Q", title="Volume"))
+        .properties(height=100)
+    ) if "volume" in df.columns else None
+
+    return alt.vconcat(price, volume).resolve_scale(x="shared") if volume is not None else price
+
+
+def equity_chart(equity_curve: pd.Series) -> alt.Chart:
+    df = equity_curve.rename("equity").reset_index()
+    df.columns = ["date", "equity"]
+    return (
+        alt.Chart(df)
+        .mark_area(opacity=0.15, color="#60A5FA", line={"color": "#60A5FA", "strokeWidth": 1.8})
+        .encode(
+            x=alt.X("date:T", title="Date"),
+            y=alt.Y("equity:Q", title="Equity", scale=alt.Scale(zero=False)),
+        )
+        .properties(height=320)
+    )
+
+
+def drawdown_chart(equity_curve: pd.Series) -> alt.Chart:
+    running_max = equity_curve.cummax()
+    drawdown = (equity_curve / running_max - 1.0) * 100
+    df = drawdown.rename("drawdown").reset_index()
+    df.columns = ["date", "drawdown"]
+    return (
+        alt.Chart(df)
+        .mark_area(opacity=0.3, color=RED, line={"color": RED, "strokeWidth": 1.4})
+        .encode(x=alt.X("date:T", title="Date"), y=alt.Y("drawdown:Q", title="Drawdown (%)"))
+        .properties(height=220)
+    )
+
+
+def trade_distribution_chart(trades: list) -> alt.Chart:
+    pnls = [t.pnl for t in trades if t.pnl is not None]
+    df = pd.DataFrame({"pnl": pnls})
+    return (
+        alt.Chart(df)
+        .mark_bar(color="#60A5FA")
+        .encode(
+            x=alt.X("pnl:Q", bin=alt.Bin(maxbins=30), title="PnL"),
+            y=alt.Y("count():Q", title="Nombre de trades"),
+        )
+        .properties(height=280)
+    )
+
+
+# ---------------------------------------------------------------- page --
+st.title(":material/monitoring: Backtester")
+st.caption("Exploration de stratégies de trading — actions & indices")
 
 with st.sidebar:
     st.header("Configuration")
@@ -107,31 +218,32 @@ with st.sidebar:
     end = col2.date_input("Fin", value=pd.Timestamp("2024-01-01"), min_value=date_bounds[0],
                            max_value=date_bounds[1]).isoformat()
 
-    st.subheader("Stratégie")
-    strategy_name = st.selectbox("Stratégie", list(STRATEGIES))
+    st.subheader(":material/query_stats: Stratégie")
+    strategy_name = st.selectbox("Stratégie", list(STRATEGIES), label_visibility="collapsed")
     strategy_params = strategy_param_widgets(strategy_name)
     st.caption(WALKFORWARD_NOTES.get(strategy_name, ""))
 
-    st.subheader("Capital & coûts")
-    initial_capital = st.number_input("Capital initial", value=100_000.0, step=10_000.0)
-    pct_per_trade = st.slider("% du capital par trade", 0.01, 1.0, 1.0, 0.01)
-    slippage_bps = st.slider("Slippage (bps)", 0.0, 20.0, 2.0, 0.5)
-    fee_bps = st.slider("Frais (bps)", 0.0, 20.0, 1.0, 0.5)
+    with st.expander("Capital & coûts", icon=":material/payments:"):
+        initial_capital = st.number_input("Capital initial", value=100_000.0, step=10_000.0)
+        pct_per_trade = st.slider("% du capital par trade", 0.01, 1.0, 1.0, 0.01)
+        slippage_bps = st.slider("Slippage (bps)", 0.0, 20.0, 2.0, 0.5)
+        fee_bps = st.slider("Frais (bps)", 0.0, 20.0, 1.0, 0.5)
 
-    st.subheader("Règles prop firm")
-    daily_loss_pct = st.slider("Perte journalière max (%)", 1.0, 20.0, 5.0, 0.5) / 100
-    max_total_loss_pct = st.slider("Perte totale max (%)", 1.0, 30.0, 10.0, 0.5) / 100
-    enable_consistency = st.checkbox("Règle de consistency", value=False)
-    max_single_trade_profit_pct = (
-        st.slider("Profit max d'un trade (% du profit total)", 5.0, 90.0, 30.0, 5.0) / 100
-        if enable_consistency
-        else None
-    )
+    with st.expander("Règles prop firm", icon=":material/shield:"):
+        daily_loss_pct = st.slider("Perte journalière max (%)", 1.0, 20.0, 5.0, 0.5) / 100
+        max_total_loss_pct = st.slider("Perte totale max (%)", 1.0, 30.0, 10.0, 0.5) / 100
+        enable_consistency = st.checkbox("Règle de consistency", value=False)
+        max_single_trade_profit_pct = (
+            st.slider("Profit max d'un trade (% du profit total)", 5.0, 90.0, 30.0, 5.0) / 100
+            if enable_consistency
+            else None
+        )
 
-    run_clicked = st.button("Lancer le backtest", type="primary")
+    run_clicked = st.button("Lancer le backtest", type="primary", icon=":material/play_arrow:", width="stretch")
 
 if not run_clicked:
-    st.info("Configure les paramètres dans la barre latérale puis clique sur 'Lancer le backtest'.")
+    st.info("Configure les paramètres dans la barre latérale puis clique sur « Lancer le backtest ».",
+             icon=":material/tune:")
     st.stop()
 
 if not ticker:
@@ -161,54 +273,76 @@ rules = PropFirmRules(
 )
 validation = validate(result.equity_curve, result.trades, rules)
 
-st.subheader(f"{ticker} — {strategy_name} — {start} → {end}")
+st.subheader(f"{ticker} · {strategy_name} · {start} → {end}")
 
-cols = st.columns(4)
-cols[0].metric("Trades", report.num_trades)
-cols[1].metric("Win rate", f"{report.win_rate:.1%}")
-cols[2].metric("Profit factor", f"{report.profit_factor:.2f}")
-cols[3].metric("Rendement total", f"{report.total_return_pct:.1%}")
+with st.container(horizontal=True):
+    st.metric("Trades", report.num_trades, border=True)
+    st.metric("Win rate", f"{report.win_rate:.1%}", border=True)
+    st.metric("Profit factor", f"{report.profit_factor:.2f}", border=True)
+    st.metric("Rendement total", f"{report.total_return_pct:.1%}", border=True)
 
-cols = st.columns(4)
-cols[0].metric("Sharpe (journalier, annualisé)", f"{report.sharpe_daily:.2f}")
-cols[1].metric("Sharpe (par trade)", f"{report.sharpe_per_trade:.2f}")
-cols[2].metric("Max drawdown", f"{report.max_drawdown_pct:.1%}")
-cols[3].metric("Durée max drawdown", f"{report.max_drawdown_duration_days} jours")
+with st.container(horizontal=True):
+    st.metric("Sharpe (journalier)", f"{report.sharpe_daily:.2f}", border=True)
+    st.metric("Sharpe (par trade)", f"{report.sharpe_per_trade:.2f}", border=True)
+    st.metric("Max drawdown", f"{report.max_drawdown_pct:.1%}", border=True)
+    st.metric("Durée max drawdown", f"{report.max_drawdown_duration_days} j.", border=True)
 
 if validation.passed:
-    st.success("Règles prop firm respectées sur toute la période testée.")
+    st.success("Règles prop firm respectées sur toute la période testée.", icon=":material/check_circle:")
 else:
-    st.error(f"Règles prop firm violées — première violation le {validation.first_breach_date.date()}.")
+    st.error(f"Règles prop firm violées — première violation le {validation.first_breach_date.date()}.",
+              icon=":material/error:")
     breach_df = pd.DataFrame(
         [{"date": b.date.date(), "règle": b.rule, "détail": b.detail} for b in validation.breaches]
     )
-    st.dataframe(breach_df, width="stretch")
+    with st.expander(f"Voir les {len(validation.breaches)} violations"):
+        st.dataframe(breach_df, width="stretch", hide_index=True)
 
-st.subheader("Évolution du prix")
-st.pyplot(plot_price(df, indicators=strategy.indicators(df), trades=result.trades))
+tab_price, tab_perf, tab_trades = st.tabs([
+    ":material/candlestick_chart: Prix & signaux",
+    ":material/trending_up: Performance",
+    ":material/receipt_long: Trades",
+])
 
-st.subheader("Equity curve")
-st.pyplot(plot_equity_curve(result.equity_curve))
+with tab_price:
+    with st.container(border=True):
+        st.altair_chart(price_chart(df, strategy.indicators(df), result.trades), width="stretch")
 
-st.subheader("Drawdown")
-st.pyplot(plot_drawdown(result.equity_curve))
+with tab_perf:
+    with st.container(border=True):
+        st.markdown("**Equity curve**")
+        st.altair_chart(equity_chart(result.equity_curve), width="stretch")
+    with st.container(border=True):
+        st.markdown("**Drawdown**")
+        st.altair_chart(drawdown_chart(result.equity_curve), width="stretch")
 
-st.subheader("Distribution des trades")
-st.pyplot(plot_trade_distribution(result.trades))
-
-st.subheader("Journal des trades")
-trades_df = pd.DataFrame(
-    [
-        {
-            "entrée": t.entry_date.date(),
-            "sortie": t.exit_date.date() if t.exit_date is not None else None,
-            "sens": "long" if t.side == 1 else "short",
-            "taille": round(t.size, 4),
-            "prix entrée": round(t.entry_price, 2),
-            "prix sortie": round(t.exit_price, 2) if t.exit_price is not None else None,
-            "pnl": round(t.pnl, 2) if t.pnl is not None else None,
-        }
-        for t in result.trades
-    ]
-)
-st.dataframe(trades_df, width="stretch")
+with tab_trades:
+    with st.container(border=True):
+        st.markdown("**Distribution des trades**")
+        st.altair_chart(trade_distribution_chart(result.trades), width="stretch")
+    with st.container(border=True):
+        st.markdown("**Journal des trades**")
+        trades_df = pd.DataFrame(
+            [
+                {
+                    "entrée": t.entry_date.date(),
+                    "sortie": t.exit_date.date() if t.exit_date is not None else None,
+                    "sens": "long" if t.side == 1 else "short",
+                    "taille": round(t.size, 4),
+                    "prix entrée": round(t.entry_price, 2),
+                    "prix sortie": round(t.exit_price, 2) if t.exit_price is not None else None,
+                    "pnl": round(t.pnl, 2) if t.pnl is not None else None,
+                }
+                for t in result.trades
+            ]
+        )
+        st.dataframe(
+            trades_df,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "prix entrée": st.column_config.NumberColumn(format="$%.2f"),
+                "prix sortie": st.column_config.NumberColumn(format="$%.2f"),
+                "pnl": st.column_config.NumberColumn(format="$%.2f"),
+            },
+        )
